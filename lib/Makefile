@@ -50,7 +50,7 @@ endif
 endif
 
 ifeq "${WITH_PPX}" "YES"
-PPX_EX= ppx/$(PPX)
+PPX_EX= ppx/$(PPX)$(EXEEXT)
 PPX_LIB= ppx/ppx_js.cma ppx/ppx_js.cmxa
 ifeq "${WITH_PPX_DRIVER}" "YES"
 PPX_LIB+= ppx_driver/ppx_js_driver.cma ppx_driver/ppx_js_driver.cmxa

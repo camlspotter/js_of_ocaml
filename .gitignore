@@ -4,6 +4,7 @@
 *.o
 *.a
 *.so
+*.dll
 # Ocaml object files
 *.cmi
 *.cmo
@@ -12,6 +13,8 @@
 *.cmxa
 *.cmxs
 *.cmjs
+*.cmt
+*.cmti
 
 # backup files
 *~

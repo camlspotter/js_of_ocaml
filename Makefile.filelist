@@ -36,7 +36,7 @@ INTF += lib/async/*.cmi
 endif
 
 ifeq "${WITH_PPX}" "YES"
-OCAMLFIND_BIN += lib/ppx/${PPX}
+OCAMLFIND_BIN += lib/ppx/${PPX}${EXEEXT}
 IMPL += lib/ppx/ppx_js.cma
 INTF += lib/ppx/*.cmi
 IMPL += lib/ppx/ppx_js.cmx lib/ppx/ppx_js.cmxa
