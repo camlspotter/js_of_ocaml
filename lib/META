@@ -20,7 +20,7 @@ package "ppx" (
   version = "[distributed with js_of_ocaml]"
   ppx = "./ppx_js"
   requires = "js_of_ocaml"
-  exists_if = "ppx_js"
+  exists_if = "ppx_js.exe"
   package "internal" (
     description = "Js_of_ocaml ppx mapper"
     version = "[distributed with js_of_ocaml]"
