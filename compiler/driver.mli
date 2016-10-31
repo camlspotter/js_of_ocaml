@@ -22,11 +22,12 @@ type profile
 
 val f :
   ?standalone:bool ->
-  ?wrap_with_fun:bool ->
+  ?global:[`Auto | `Function | `Custom of string] ->
   ?profile:profile ->
-  ?toplevel:bool ->
+  ?dynlink:bool ->
   ?linkall:bool ->
   ?source_map:(string option * Source_map.t) ->
+  ?custom_header:string ->
   Pretty_print.t -> Parse_bytecode.Debug.data -> Code.program -> unit
 
 val from_string : string array -> string -> Pretty_print.t -> unit

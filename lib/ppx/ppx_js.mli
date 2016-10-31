@@ -1,4 +1,9 @@
-(** Ppx syntax extension for Js_of_ocaml. *)
+(** Ppx syntax extension for Js_of_ocaml.
+
+    To migrate from the camlp4 extension, it is advised to use
+    {{:https://github.com/janestreet/camlp4-to-ppx}camlp4-to-ppx},
+    which provides built-in support for Js_of_ocaml syntax.
+*)
 
 val js_mapper : string list -> Ast_mapper.mapper
 (**
@@ -39,7 +44,7 @@ e_i : t_i               (1 <= i <= n)
 constr : (t_1 -> ... -> t_n -> u Js.t) Js.constr
    e_i : t_i               (1 <= i <= n)
 ------------------------------------------------
-          new%js constr e1 ... en : u
+          new%js constr e1 ... en : u Js.t
    ]}
    [ constr ] here must be an identifier. For constructors
    that are not identifiers, bind them first:

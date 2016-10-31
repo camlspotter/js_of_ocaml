@@ -24,6 +24,19 @@ module IntMap : Map.S with type key = int
 module StringSet : Set.S with type elt = string
 module StringMap : Map.S with type key = string
 
+module BitSet : sig
+  type t
+  val create : unit -> t
+  val mem : t -> int -> bool
+  val set : t -> int -> unit
+  val unset : t -> int -> unit
+  val next_free : t -> int -> int
+  val next_mem : t -> int -> int
+  val iter : (int -> unit) -> t -> unit
+  val copy : t -> t
+  val size : t -> int
+end
+
 val quiet : bool ref
 val warn : ('a,unit,string,unit) format4 -> 'a
 
@@ -43,6 +56,7 @@ val absolute_path : string -> string
 val read_file : string -> string
 
 val take : int -> 'a list -> 'a list * 'a list
+val last : 'a list -> 'a option
 
 val is_ascii : string -> bool
 val has_backslash : string -> bool
@@ -72,7 +86,10 @@ module Version : sig
   val compare : t -> t -> int
   val split : string -> t
   val v : [ `V3      (* OCaml 3.12 to 4.01 *)
-          | `V4_02 ] (* OCaml 4.02 *)
+          | `V4_02   (* OCaml 4.02 *)
+          | `V4_03   (* OCaml 4.03 *)
+          | `V4_04   (* OCaml 4.04 *)
+          ]
 end
 
 module MagicNumber : sig
@@ -92,3 +109,9 @@ module MagicNumber : sig
 end
 
 val obj_of_const : Lambda.structured_constant -> Obj.t
+
+val uncapitalize_ascii : string -> string
+val capitalize_ascii   : string -> string
+
+
+val find_loc_in_summary : string -> Ident.t -> Env.summary -> Location.t option

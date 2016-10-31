@@ -290,18 +290,21 @@ class type ['a] js_array = object
   method unshift_3 : 'a -> 'a -> 'a -> int meth
   method unshift_4 : 'a -> 'a -> 'a -> 'a -> int meth
 
-  method some : ('a -> int -> 'a js_array t -> bool t ) -> bool t meth
-  method every : ('a -> int -> 'a js_array t -> bool t ) -> bool t meth
-  method forEach : ('a -> int -> 'a js_array t -> unit ) -> unit meth
-  method map : ('a -> int -> 'a js_array t -> 'b) -> 'b js_array t meth
-  method filter : ('a -> int -> 'a js_array t -> bool t) -> 'a js_array t meth
-  method reduce_init : ('b -> 'a -> int -> 'a js_array t -> 'b) -> 'b -> 'b meth
-  method reduce : ('a -> 'a -> int -> 'a js_array t -> 'a) -> 'a meth
-  method reduceRight_init : ('b -> 'a -> int -> 'a js_array t -> 'b) -> 'b -> 'b meth
-  method reduceRight : ('a -> 'a -> int -> 'a js_array t -> 'a) -> 'a meth
+  method some : ('a -> int -> 'a js_array t -> bool t ) callback -> bool t meth
+  method every : ('a -> int -> 'a js_array t -> bool t ) callback -> bool t meth
+  method forEach : ('a -> int -> 'a js_array t -> unit ) callback -> unit meth
+  method map : ('a -> int -> 'a js_array t -> 'b) callback -> 'b js_array t meth
+  method filter : ('a -> int -> 'a js_array t -> bool t) callback -> 'a js_array t meth
+  method reduce_init : ('b -> 'a -> int -> 'a js_array t -> 'b) callback -> 'b -> 'b meth
+  method reduce : ('a -> 'a -> int -> 'a js_array t -> 'a) callback -> 'a meth
+  method reduceRight_init : ('b -> 'a -> int -> 'a js_array t -> 'b) callback -> 'b -> 'b meth
+  method reduceRight : ('a -> 'a -> int -> 'a js_array t -> 'a) callback -> 'a meth
 
   method length : int prop
 end
+
+val object_keys : 'a t -> js_string t js_array t
+  (** Returns jsarray containing keys of the object as Object.keys does. *)
 
 val array_empty : 'a js_array t constr
   (** Constructor of [Array] objects.  The expression
@@ -319,6 +322,12 @@ val array_get : 'a #js_array t -> int -> 'a optdef
 val array_set : 'a #js_array t -> int -> 'a -> unit
   (** Array update: [array_set a i v] puts [v] at index [i] in
       array [a]. *)
+
+val array_map  : ('a -> 'b) ->        'a #js_array t -> 'b #js_array t
+  (** Array map: [array_map f a] is [a##map(wrap_callback (fun elt idx arr -> f elt))]. *)
+
+val array_mapi : (int -> 'a -> 'b) -> 'a #js_array t -> 'b #js_array t
+  (** Array mapi: [array_mapi f a] is [a##map(wrap_callback (fun elt idx arr -> f idx elt))]. *)
 
 (** Specification of match result objects *)
 class type match_result = object
@@ -345,7 +354,7 @@ class type number = object
   method toFixed : int -> js_string t meth
   method toExponential : js_string t meth
   method toExponential_digits : int -> js_string t meth
-  method toPrecision : int -> js_string meth t
+  method toPrecision : int -> js_string t meth
 end
 
 external number_of_float : float -> number t = "caml_js_from_float"
@@ -508,6 +517,7 @@ val error_constr : (js_string t -> error t) constr
       returns an [Error] object with the message [msg]. *)
 
 val string_of_error : error t -> string
+val raise_js_error  : error t -> 'a
 
 exception Error of error t
   (** The [Error] exception wrap javascript exceptions when catched by ocaml code.
@@ -603,15 +613,15 @@ val coerce_opt : 'a Opt.t -> ('a -> 'b Opt.t) -> ('a -> 'b) -> 'b
       If [v] is [null] or the coercion returns [null], function [f] is
       called.
       Typical usage is the following:
-      {[Js.coerce_opt (Dom_html.document##getElementById(id))
+      {[Js.coerce_opt (Dom_html.document##getElementById id)
       Dom_html.CoerceTo.div (fun _ -> assert false)]} *)
 
 (** {2 Type checking operators.} *)
 
-external typeof : < .. > t -> js_string t = "caml_js_typeof"
+external typeof : _ t -> js_string t = "caml_js_typeof"
   (** Returns the type of a Javascript object. *)
 
-external instanceof : < .. > t -> _ constr -> bool = "caml_js_instanceof"
+external instanceof : _ t -> _ constr -> bool = "caml_js_instanceof"
   (** Tests whether a Javascript object is an instance of a given class. *)
 
 (** {2 Debugging operations.} *)
@@ -620,6 +630,27 @@ external debugger : unit -> unit = "debugger"
   (** Invokes any available debugging functionality.
       If no debugging functionality is available, it has no effect.
       In practice, it will insert a "debugger;" statement in the generated javascript. *)
+
+(** {2 Export functionality.}
+    Export values to [module.exports] if it exists or to the global
+    object otherwise.
+*)
+
+(** [export name value] export [name] *)
+val export : string -> 'a -> unit
+
+(** [export_all obj] export every key of [obj] object.
+{[
+export_all
+  object%js
+    method add x y = x +. y
+    method abs x = abs_float x
+    val zero = 0.
+  end
+]}
+*)
+val export_all : 'a t -> unit
+
 
 (** {2 Unsafe operations.} *)
 
@@ -632,7 +663,7 @@ module Unsafe : sig
   external inject : 'a -> any = "%identity"
     (** Coercion to top type. *)
 
-  external coerce : < .. > t -> < ..> t = "%identity"
+  external coerce : _ t -> _ t = "%identity"
     (** Unsafe coercion between to Javascript objects. *)
 
   external get : 'a -> 'b -> 'c = "caml_js_get"

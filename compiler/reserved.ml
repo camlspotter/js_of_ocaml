@@ -35,7 +35,7 @@ let keyword = List.fold_left (fun acc x -> StringSet.add x acc)
     "this"; "throw"; "try"; "typeof";
     "var"; "void"; "while"; "with";
 
-    (* reserved for future use *)
+    (* reserved in ECMAScript 5 *)
     "class"; "enum"; "export"; "extends"; "import"; "super";
 
     "implements";"interface";
@@ -54,6 +54,17 @@ let keyword = List.fold_left (fun acc x -> StringSet.add x acc)
     "undefined";
     "this";
 
+    (* Unexpected eval or arguments in strict mode *)
+    "eval";
+    "arguments";
+
+    (* also reserved in ECMAScript 3 *)
+    "abstract"; "boolean"; "byte"; "char"; "const"; "double";
+    "final"; "float"; "goto"; "int"; "long"; "native"; "short";
+    "synchronized"; "throws"; "transient"; "volatile";
+
+    (* also reserved in ECMAScript 6 *)
+    "await"
 ]
 
 
@@ -89,6 +100,7 @@ let provided = List.fold_left (fun acc x -> StringSet.add x acc)
   "DOMException";
   "Error";
   "SyntaxError";
+  "TypeError";
   "arguments";
 
   "decodeURI";
@@ -101,4 +113,6 @@ let provided = List.fold_left (fun acc x -> StringSet.add x acc)
   "isNaN";
   "parseFloat";
   "parseInt";
+
+  "module";
 ]

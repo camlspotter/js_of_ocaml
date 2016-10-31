@@ -121,7 +121,7 @@ let program_deps (_, blocks, _) =
        match block.branch with
          Return _ | Raise _ | Stop ->
            ()
-       | Branch cont | Poptrap cont ->
+       | Branch cont | Poptrap (cont,_) ->
            cont_deps blocks vars deps defs cont
        | Cond (_, _, cont1, cont2) ->
            cont_deps blocks vars deps defs cont1;
@@ -230,8 +230,23 @@ let expr_escape st _x e =
               | Expr (Block (_, a)) ->
                 Array.iter (fun x -> block_escape st x) a
               | _ -> block_escape st v
+            end
+          | Pv v,`Object_literal ->
+            begin match st.defs.(Var.idx v) with
+              | Expr (Block (_, a)) ->
+                Array.iter
+                  (fun x ->
+                     begin match st.defs.(Var.idx x) with
+                       | Expr (Block (_, [|_k; v|])) ->
+                         block_escape st v
+                       | _ ->
+                         block_escape st x
+                     end)
+                  a
+              | _ ->
+                block_escape st v
             end;
-          | Pv v, _ -> block_escape st v
+          | Pv v, `Mutable -> block_escape st v
         end;
         loop ax kx in
     loop l ka
@@ -408,6 +423,7 @@ let build_subst info  vars =
 (****)
 
 let f ?skip_param p =
+  Code.invariant p;
   let t = Util.Timer.make () in
   let t1 = Util.Timer.make () in
   let (vars, deps, defs) = program_deps p in
@@ -445,4 +461,5 @@ let f ?skip_param p =
   let p = Subst.program (Subst.from_array s) p in
   if times () then Format.eprintf "    flow analysis 5: %a@." Util.Timer.print t5;
   if times () then Format.eprintf "  flow analysis: %a@." Util.Timer.print t;
+  Code.invariant p;
   p, info

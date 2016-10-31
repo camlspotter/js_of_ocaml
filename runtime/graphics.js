@@ -62,7 +62,7 @@ function caml_gr_open_graph(info){
   h = h?parseInt(h):200;
   specs.push("height="+h);
 
-  var win = g.open("",target,specs.join(","));
+  var win = g.open("about:blank",target,specs.join(","));
   if(!win) {caml_failwith("Graphics.open_graph: cannot open the window")}
   var doc = win.document;
   var canvas = doc.createElement("canvas");
@@ -399,10 +399,17 @@ function caml_gr_make_image(arr){
     for(var j=0;j<w;j++){
       var c = arr[i+1][j+1];
       var o = i*(w*4) + (j * 4);
-      im.data[o + 0] = c >> 16 & 0xff;
-      im.data[o + 1] = c >>  8 & 0xff;
-      im.data[o + 2] = c >>  0 & 0Xff;
-      im.data[o + 3] = 0xff;
+      if(c == -1) {
+        im.data[o + 0] = 0;
+        im.data[o + 1] = 0;
+        im.data[o + 2] = 0;
+        im.data[o + 3] = 0;
+      } else {
+        im.data[o + 0] = c >> 16 & 0xff;
+        im.data[o + 1] = c >>  8 & 0xff;
+        im.data[o + 2] = c >>  0 & 0Xff;
+        im.data[o + 3] = 0xff;
+      }
     }
   }
   return im
@@ -427,7 +434,20 @@ function caml_gr_dump_image(im){
 //Requires: caml_gr_state_get
 function caml_gr_draw_image(im,x,y){
   var s = caml_gr_state_get();
-  s.context.putImageData(im,x,s.height - im.height - y);
+  if(!im.image) {
+    var canvas = document.createElement("canvas");
+    canvas.width = s.width;
+    canvas.height = s.height;
+    canvas.getContext("2d").putImageData(im,0,0);
+    var image = new joo_global_object.Image();
+    image.onload = function () {
+      s.context.drawImage(image,x,s.height - im.height - y);
+      im.image = image;
+    }
+    image.src = canvas.toDataURL("image/png");
+  } else {
+  s.context.drawImage(im.image,x,s.height - im.height - y);
+  }
   return 0;
 }
 //Provides: caml_gr_create_image
@@ -473,4 +493,22 @@ function caml_gr_remember_mode () {
 //Requires: caml_failwith
 function caml_gr_display_mode() {
   caml_failwith("caml_gr_display_mode not Implemented");
+}
+
+//Provides: caml_gr_window_id
+//Requires: caml_failwith
+function caml_gr_window_id(a) {
+  caml_failwith("caml_gr_window_id not Implemented");
+}
+
+//Provides: caml_gr_open_subwindow
+//Requires: caml_failwith
+function caml_gr_open_subwindow(a,b,c,d) {
+  caml_failwith("caml_gr_open_subwindow not Implemented");
+}
+
+//Provides: caml_gr_close_subwindow
+//Requires: caml_failwith
+function caml_gr_close_subwindow(a) {
+  caml_failwith("caml_gr_close_subwindow not Implemented");
 }

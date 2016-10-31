@@ -1,7 +1,8 @@
 # Js_of_ocaml (jsoo)
 
-Js_of_ocaml is a compiler from OCaml bytecode to Javascript. It makes
-OCaml programs run on Web browsers.
+Js_of_ocaml is a compiler from OCaml bytecode to JavaScript. It makes
+it possible to run pure OCaml programs in JavaScript environment
+like browsers and Node.js.
   * It is easy to install and use as it works with an existing
     installation of OCaml, with no need to recompile any library.
   * It comes with bindings for a large part of the browser APIs.
@@ -12,19 +13,18 @@ OCaml programs run on Web browsers.
     API.
 
 ## Requirements
-
-  * Findlib: **version 1.5.1** at least
-  * Lwt: **version 2.3.0** at least
-  * Menhir
-  * Cmdliner
-  * cppo
-  * base64 (version 2.0.0 at least)
+  Findlib, Lwt, Menhir, Cmdliner, cppo, base64.
+  See [opam](https://github.com/ocsigen/js_of_ocaml/blob/master/opam) file for version constraints.
 
 ### optional
-  * [deriving](https://github.com/ocsigen/deriving): **version 0.6** at least
+  * [deriving](https://github.com/ocsigen/deriving)
+  * [ppx_deriving](https://github.com/whitequark/ppx_deriving)
+  * [tyxml](https://github.com/ocsigen/tyxml)
+  * [reactiveData](https://github.com/ocsigen/reactiveData)
+  * [async_kernel](https://github.com/janestreet/async_kernel): tested with **version 113.33.00**
 
 ### Toplevel requirements
- * base64 (version 2.0.0 at least)
+ * base64, tyxml, reactiveData
  * ocp-indent: needed to support indentation in the toplevel
  * higlo: needed to support Syntax highlighting in the toplevel
  * cohttp: needed to build the toplevel webserver
@@ -33,7 +33,7 @@ OCaml programs run on Web browsers.
 
 ###Opam
 ```
-opam install deriving js_of_ocaml
+opam install js_of_ocaml
 ```
 
 ###Manual
@@ -49,14 +49,14 @@ toplevel as well. [Try the toplevel](http://ocsigen.github.io/js_of_ocaml/)
 ## Usage
 
 Your program must first be compiled using the OCaml bytecode compiler
-`ocamlc`.  Javascript bindings are provided by the `js_of_ocaml` package.
+`ocamlc`. JavaScript bindings are provided by the `js_of_ocaml` package.
 The syntax extension is provided by `js_of_ocaml.syntax` package.
 
 ```
 ocamlfind ocamlc -package js_of_ocaml -syntax camlp4o -package js_of_ocaml.syntax -linkpkg -o cubes.byte cubes.ml
 ```
 
-Then, run the `js_of_ocaml` compiler to produce Javascript code:
+Then, run the `js_of_ocaml` compiler to produce JavaScript code:
 
 ```
 js_of_ocaml cubes.byte
@@ -65,7 +65,7 @@ js_of_ocaml cubes.byte
 ## Features
 
 Most of the OCaml standard library is supported. However,
-  * Weak semantic cannot be implemented using javascript.
+  * Weak semantic cannot be implemented using JavaScript.
     A dummy implementation is available (use `+weak.js` option)
   * Most of the Sys module is not supported.
 
@@ -73,7 +73,7 @@ Extra libraries distributed with Ocaml (such as Thread or Str) are not
 supported in general. However,
   * Bigarray: bigarrays are supported using Typed Arrays
   * Num: supported using `+nat.js` option
-  * Graphics: partially supported using canvas (see also js_of_ocaml.graphics)
+  * Graphics: partially supported using canvas (see js_of_ocaml.graphics)
   * Unix: time related functions are supported
 
 Tail call is not optimized in general. However, mutually recursive
@@ -81,6 +81,7 @@ functions are optimized:
   * self recursive functions (when the tail calls are the function itself) are
     compiled using a loop.
   * trampolines are used otherwise.
+[More](http://ocsigen.org/js_of_ocaml/dev/manual/tailcall) about tail call optimization.
 
 Data representation differs from the usual one.  Most notably,
 integers are 32 bits (rather than 31 bits or 63 bits), which is their
@@ -93,9 +94,8 @@ functions can yield results different from usual:
   * these functions may be more prone to stack overflow.
 
 ## Toplevel
-  * [Ocaml 4.01.0](http://ocsigen.github.io/js_of_ocaml/#version=4.01.0)
-  * [Ocaml 4.01.0+BER](http://ocsigen.github.io/js_of_ocaml/#version=4.01.0+BER) : MetaOcaml
-  * [Ocaml 4.02.0](http://ocsigen.github.io/js_of_ocaml/#version=4.02.0)
+  * [Ocaml 4.02.3](http://ocsigen.github.io/js_of_ocaml/#version=4.02.3)
+  * [Ocaml 4.03.0](http://ocsigen.github.io/js_of_ocaml/#version=4.03.0)
 
 ## Contents of the distribution
 | Filename  | Description                                  |
@@ -104,6 +104,6 @@ functions can yield results different from usual:
 | README    | this file                                    |
 | compiler/ | compiler                                     |
 | examples/ | small examples                               |
-| lib/      | library for interfacing with Javascript APIs |
+| lib/      | library for interfacing with JavaScript APIs |
 | runtime/  | runtime system                               |
 | toplevel/ | web-based OCaml toplevel                     |

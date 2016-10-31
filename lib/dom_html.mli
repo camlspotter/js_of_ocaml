@@ -123,6 +123,7 @@ class type cssStyleDeclaration = object
   method textIndent : js_string t prop
   method textTransform : js_string t prop
   method top : js_string t prop
+  method transform : js_string t prop
   method verticalAlign : js_string t prop
   method visibility : js_string t prop
   method whiteSpace : js_string t prop
@@ -171,13 +172,21 @@ end
 
 and keyboardEvent = object
   inherit event
-  method charCode : int optdef readonly_prop
-  method keyCode : int readonly_prop
-  method keyIdentifier : js_string t optdef readonly_prop
   method altKey : bool t readonly_prop
   method shiftKey : bool t readonly_prop
   method ctrlKey : bool t readonly_prop
   method metaKey : bool t readonly_prop
+  method location : int readonly_prop
+
+  (* Standardized but not fully supported properties *)
+  method key : js_string t optdef readonly_prop
+  method code : js_string t optdef readonly_prop
+
+  (* Deprecated properties *)
+  method which : int optdef readonly_prop
+  method charCode : int optdef readonly_prop
+  method keyCode : int readonly_prop
+  method keyIdentifier : js_string t optdef readonly_prop
 end
 
 and mousewheelEvent = object (* All browsers but Firefox *)
@@ -324,6 +333,7 @@ and element = object
   method classList : tokenList t readonly_prop
     (* Not supported by IE9 by default. Add +classList.js to the
        Js_of_ocaml command line for compatibility *)
+
   method style : cssStyleDeclaration t prop
 
   method innerHTML : js_string t prop
@@ -348,6 +358,8 @@ and element = object
   method getBoundingClientRect : clientRect t meth
 
   method scrollIntoView: bool t -> unit meth
+
+  method click : unit meth
 
   inherit eventTarget
 end
@@ -385,6 +397,7 @@ class type linkElement = object
   inherit element
   method disabled : bool t prop
   method charset : js_string t prop
+  method crossorigin : js_string t prop
   method href : js_string t prop
   method hreflang : js_string t prop
   method media : js_string t prop
@@ -500,9 +513,11 @@ class type inputElement = object ('self)
   method blur : unit meth
   method focus : unit meth
   method select : unit meth
-  method click : unit meth
   method files : File.fileList t optdef readonly_prop
   method placeholder : js_string t writeonly_prop (* Not supported by IE 9 *)
+  method selectionDirection : js_string t prop
+  method selectionStart : int prop
+  method selectionEnd : int prop
   method onselect : ('self t, event t) event_listener prop
   method onchange : ('self t, event t) event_listener prop
   method oninput : ('self t, event t) event_listener prop
@@ -520,6 +535,9 @@ class type textAreaElement = object ('self)
   method name : js_string t readonly_prop (* Cannot be changed under IE *)
   method readOnly : bool t prop
   method rows : int prop
+  method selectionDirection : js_string t prop
+  method selectionEnd : int prop
+  method selectionStart : int prop
   method tabIndex : int prop
   method _type : js_string t readonly_prop (* Cannot be changed under IE *)
   method value : js_string t prop
@@ -844,6 +862,8 @@ class type canvasElement = object
   method width : int prop
   method height : int prop
   method toDataURL : js_string t meth
+  method toDataURL_type : js_string t -> js_string t meth
+  method toDataURL_type_compression : js_string t -> float -> js_string t meth
   method getContext : context -> canvasRenderingContext2D t meth
 end
 
@@ -1042,7 +1062,8 @@ class type document = object
   method execCommand : js_string t -> bool t -> js_string t opt -> unit meth
   method createRange : range t meth
   method readyState : js_string t readonly_prop
-  method getElementsByClassName : js_string t -> 'element Dom.nodeList t meth
+  method getElementsByClassName : js_string t -> element Dom.nodeList t meth
+  method activeElement : element t opt readonly_prop
 
   inherit eventTarget
 end
@@ -1062,6 +1083,7 @@ class type location = object
   method protocol : js_string t prop
   method host : js_string t prop
   method hostname : js_string t prop
+  method origin : js_string t optdef readonly_prop
   method port : js_string t prop
   method pathname : js_string t prop
   method search : js_string t prop
@@ -1071,6 +1093,8 @@ class type location = object
   method replace : js_string t -> unit meth
   method reload : unit meth
 end
+
+val location_origin : location t -> js_string t
 
 (** Browser history information *)
 class type history = object
@@ -1131,6 +1155,11 @@ type interval_id
 type timeout_id
 type animation_frame_request_id
 
+class type _URL = object
+  method createObjectURL : #File.blob t -> js_string t meth
+  method revokeObjectURL : js_string t -> unit meth
+end
+
 (** Specification of window objects *)
 class type window = object
   inherit eventTarget
@@ -1149,6 +1178,7 @@ class type window = object
   method focus : unit meth
   method blur : unit meth
   method scroll : int -> int -> unit meth
+  method scrollBy : int -> int -> unit meth
 
   method sessionStorage : storage t optdef readonly_prop
   method localStorage : storage t optdef readonly_prop
@@ -1179,6 +1209,13 @@ class type window = object
   method outerWidth : int optdef readonly_prop
   method outerHeight : int optdef readonly_prop
 
+  method getComputedStyle : #element t -> cssStyleDeclaration t meth
+  method getComputedStyle_pseudoElt :
+    #element t -> js_string t -> cssStyleDeclaration t meth
+
+  method atob : js_string t -> js_string t meth
+  method btoa : js_string t -> js_string t meth
+
   method onload : (window t, event t) event_listener prop
   method onunload : (window t, event t) event_listener prop
   method onbeforeunload : (window t, event t) event_listener prop
@@ -1191,6 +1228,8 @@ class type window = object
 
   method ononline : (window t, event t) event_listener writeonly_prop
   method onoffline : (window t, event t) event_listener writeonly_prop
+
+  method _URL : _URL t readonly_prop
 end
 
 val window : window t
@@ -1350,6 +1389,81 @@ val elementClientPosition : #element t -> int * int
 
 val getDocumentScroll : unit -> int * int
   (** Viewport top/left position *)
+
+(** {2 Key event helper functions} *)
+
+(** Use [Keyboard_code] when you want to identify a key that the user pressed. This should
+    be invoked for keydown and keyup events, not keypress events.
+
+    If the browser supports the standardized [key] and [code] properties, then [of_event]
+    on a keypress event will have the correct behavior. Otherwise, it might not identify
+    or might mis-identify which key was pressed. This occurs because the keypress event is
+    designed for printable characters while keydown and keyup are designed for physical
+    keys. Thus, the older properties of [keyEvent] change behavior between keydown and
+    keypress events. This change in behavior is what causes the mapping to be incorrect.
+*)
+module Keyboard_code : sig
+  type t =
+    | Unidentified
+    (* Alphabetic Characters *)
+    | KeyA                | KeyB                | KeyC                | KeyD
+    | KeyE                | KeyF                | KeyG                | KeyH
+    | KeyI                | KeyJ                | KeyK                | KeyL
+    | KeyM                | KeyN                | KeyO                | KeyP
+    | KeyQ                | KeyR                | KeyS                | KeyT
+    | KeyU                | KeyV                | KeyW                | KeyX
+    | KeyY                | KeyZ
+    (* Digits *)
+    | Digit0              | Digit1              | Digit2              | Digit3
+    | Digit4              | Digit5              | Digit6              | Digit7
+    | Digit8              | Digit9              | Minus               | Equal
+    (* Whitespace *)
+    | Tab                 | Enter               | Space
+    (* Editing *)
+    | Escape              | Backspace           | Insert              | Delete
+    | CapsLock
+    (* Misc Printable *)
+    | BracketLeft         | BracketRight        | Semicolon           | Quote
+    | Backquote           | Backslash           | Comma               | Period
+    | Slash
+    (* Function keys *)
+    | F1                  | F2                  | F3                  | F4
+    | F5                  | F6                  | F7                  | F8
+    | F9                  | F10                 | F11                 | F12
+    (* Numpad keys *)
+    | Numpad0             | Numpad1             | Numpad2             | Numpad3
+    | Numpad4             | Numpad5             | Numpad6             | Numpad7
+    | Numpad8             | Numpad9             | NumpadMultiply      | NumpadSubtract
+    | NumpadAdd           | NumpadDecimal       | NumpadEqual         | NumpadEnter
+    | NumpadDivide        | NumLock
+    (* Modifier keys *)
+    | ControlLeft         | ControlRight        | MetaLeft            | MetaRight
+    | ShiftLeft           | ShiftRight          | AltLeft             | AltRight
+    (* Arrow keys *)
+    | ArrowLeft           | ArrowRight          | ArrowUp             | ArrowDown
+    (* Navigation *)
+    | PageUp              | PageDown            | Home                | End
+    (* Sound *)
+    | VolumeMute          | VolumeDown          | VolumeUp
+    (* Media *)
+    | MediaTrackPrevious  | MediaTrackNext      | MediaPlayPause      | MediaStop
+    (* Browser special *)
+    | ContextMenu         | BrowserSearch       | BrowserHome         | BrowserFavorites
+    | BrowserRefresh      | BrowserStop         | BrowserForward      | BrowserBack
+    (* Misc *)
+    | OSLeft              | OSRight             | ScrollLock          | PrintScreen
+    | IntlBackslash       | IntlYen             | Pause
+
+  val of_event : keyboardEvent Js.t -> t
+end
+
+(** Use [Keyboard_key] when you want to identify the character that the user typed. This
+   should only be invoked on keypress events, not keydown or keyup events. *)
+module Keyboard_key : sig
+  type t = Uchar.t option
+
+  val of_event : keyboardEvent Js.t -> t
+end
 
 (****)
 
@@ -1616,11 +1730,13 @@ end
 
 type timeout_id_safe
 
-(** Same as [Dom_html.window##setTimeout(cb,ms)] but prevents overflow
+(** Same as [Dom_html.window##setTimeout cb ms] but prevents overflow
     with delay greater than 24 days. *)
 val setTimeout : (unit -> unit) -> float -> timeout_id_safe
 val clearTimeout : timeout_id_safe -> unit
 
+(** Convert a [Dom_html.collection] to a Js array *)
+val js_array_of_collection : #element collection Js.t -> #element Js.t Js.js_array Js.t
 
 (** {2 Deprecated function.} *)
 

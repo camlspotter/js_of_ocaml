@@ -23,10 +23,14 @@ type t = {
   profile : Driver.profile option;
   source_map : (string option * Source_map.t) option;
   runtime_files : string list;
+  runtime_only : bool;
   output_file : string option;
   input_file : string option;
   params : (string * string) list;
+  static_env : (string * string) list;
+  wrap_with_fun : bool;
   (* toplevel *)
+  dynlink : bool;
   linkall : bool;
   toplevel : bool;
   nocmis : bool;

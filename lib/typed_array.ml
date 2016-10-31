@@ -141,3 +141,17 @@ end
 
 let dataView = Js.Unsafe.global ## _DataView
 let dataView_inBuffer = dataView
+
+
+module Bigstring = struct
+  type t = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+  external to_arrayBuffer : t -> arrayBuffer Js.t = "bigstring_to_array_buffer"
+  external of_arrayBuffer : arrayBuffer Js.t -> t = "bigstring_of_array_buffer"
+end
+
+module String = struct
+  external of_uint8Array : uint8Array Js.t -> string = "caml_string_of_array"
+  let of_arrayBuffer ab =
+    let uint8 = jsnew uint8Array_fromBuffer(ab) in
+    of_uint8Array uint8
+end

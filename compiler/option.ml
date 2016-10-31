@@ -34,10 +34,33 @@ let extra_js_files =
 
 (* Optimisation *)
 
+let series = ref None
+
+let stop_profiling () = match !series with
+  | Some _x ->
+    (* Spacetime.Series.save_and_close x; *)
+    series:=None
+  | None -> ()
+
+let start_profiling name =
+  let path = name ^ ".spacetime" in
+  stop_profiling ();
+  Format.eprintf "Start profiling %s\n%!" path;
+  (* series := Some (Spacetime.Series.create ~path); *)
+  ()
+
+let take_snapshot () =
+  match !series with
+  | None -> ()
+  | Some _series ->
+    Gc.minor ();
+    (* Spacetime.Snapshot.take series; *)
+    ()
 module Debug = struct
   let debugs : (string * bool ref) list ref = ref []
 
   let available () = List.map fst !debugs
+
   let find s =
     let state =
       try
@@ -47,7 +70,9 @@ module Debug = struct
         debugs := (s, state) :: !debugs;
         state
     in
-    fun () -> not !Util.quiet && !state
+    fun () ->
+      if s = "times" then take_snapshot ();
+      not !Util.quiet && !state
 
   let enable s =
     try List.assoc s !debugs := true with Not_found ->
@@ -56,6 +81,9 @@ module Debug = struct
   let disable s =
     try List.assoc s !debugs := false with Not_found ->
       failwith (Printf.sprintf "The debug named %S doesn't exist" s)
+
+
+  let _ = find "mem"
 
 end
 
@@ -98,10 +126,13 @@ module Optim = struct
   let debugger = o ~name:"debugger" ~default:true
   let genprim = o ~name:"genprim" ~default:true
   let excwrap = o ~name:"excwrap" ~default:true
+  let improved_stacktrace = o ~name:"with-js-error" ~default:false
   let include_cmis = o ~name:"withcmi" ~default: true
   let warn_unused = o ~name:"warn-unused"  ~default: false
 
   let inline_callgen = o ~name:"callgen" ~default:false
+
+  let check_magic = o ~name:"check-magic-number" ~default:true
 
   (* this does not optimize properly *)
   let compact_vardecl = o ~name:"vardecl" ~default:false
@@ -157,11 +188,11 @@ module Param = struct
   type tc =
     | TcNone
     | TcTrampoline
-    | TcWhile
+    (* | TcWhile *)
 
   let tc_default = TcTrampoline
 
-  let _tc_all = tc_default :: List.filter ((<>) tc_default) [TcNone;TcTrampoline(* ;TcWhile *)]
+  let _tc_all = tc_default :: List.filter ((<>) tc_default) [TcNone;TcTrampoline]
 
   let tailcall_optim = p
       ~name:"tc"

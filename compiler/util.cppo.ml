@@ -67,18 +67,32 @@ let rec find_in_path paths name =
     then file
     else find_in_path rem name
 
+let find_in_path paths name =
+  if name = "" || name = "."
+  then raise Not_found
+  else if Filename.is_relative name
+  then find_in_path paths name
+  else if Sys.file_exists name
+  then name
+  else raise Not_found
+
 let absolute_path f =
   if Filename.is_relative f
   then Filename.concat (Sys.getcwd()) f
   else f
 
 let read_file f =
-  let ic = open_in f in
-  let n = in_channel_length ic in
-  let s = Bytes.create n in
-  really_input ic s 0 n;
-  close_in ic;
-  Bytes.unsafe_to_string s
+  try
+    let ic = open_in_bin f in
+    let n = in_channel_length ic in
+    let s = Bytes.create n in
+    really_input ic s 0 n;
+    close_in ic;
+    Bytes.unsafe_to_string s
+  with e ->
+    failwith
+      (Printf.sprintf "Cannot read content of %s.\n%s"
+         f (Printexc.to_string e))
 
 let filter_map f l =
   let l = List.fold_left (fun acc x -> match f x with
@@ -115,6 +129,11 @@ let rec take' acc n l =
 let take n l =
   let x,xs = take' [] n l in
   List.rev x, xs
+
+let rec last = function
+  | [] -> None
+  | [x] -> Some x
+  | _ :: xs -> last xs
 
 module Timer = struct
   type t = float
@@ -236,6 +255,78 @@ let find sep s =
     raise Not_found
   with Found i -> i
 
+
+let int_num_bits =
+  let size = ref 0 in
+  let i = ref (-1) in
+  while !i <> 0 do i:= !i lsl 1; incr size done;
+  !size
+
+module BitSet : sig
+  type t
+  val create : unit -> t
+  val mem : t -> int -> bool
+  val set : t -> int -> unit
+  val unset : t -> int -> unit
+  val copy : t -> t
+  val iter : (int -> unit) -> t -> unit
+  val size : t -> int
+  val next_free : t -> int -> int
+  val next_mem : t -> int -> int
+end = struct
+  type t =
+    { mutable arr : int array;
+    }
+  let create () = { arr = Array.make 1 0 }
+
+  let size t =
+    Array.length t.arr * int_num_bits
+
+  let mem { arr } i =
+    let idx = i / int_num_bits in
+    let off = i mod int_num_bits in
+    idx < Array.length arr && Array.unsafe_get arr idx land (1 lsl off) <> 0
+
+  let set t i =
+    let idx = i / int_num_bits in
+    let off = i mod int_num_bits in
+    let size = ref (Array.length t.arr) in
+    while idx >= !size do size := !size * 2 done;
+    if !size <> Array.length t.arr
+    then begin
+      let a = Array.make !size 0 in
+      Array.blit t.arr 0 a 0 (Array.length t.arr);
+      t.arr <- a
+    end;
+    Array.unsafe_set t.arr idx (Array.unsafe_get t.arr idx lor (1 lsl off))
+
+  let unset t i =
+    let idx = i / int_num_bits in
+    let off = i mod int_num_bits in
+    let size = Array.length t.arr in
+    if idx >= size then ()
+    else if Array.unsafe_get t.arr idx land (1 lsl off) <> 0
+    then Array.unsafe_set t.arr idx (Array.unsafe_get t.arr idx lxor (1 lsl off))
+
+  let next_free t i =
+    let x = ref i in
+    while mem t !x do incr x done;
+    !x
+
+  let next_mem t i =
+    let x = ref i in
+    while not (mem t !x) do incr x done;
+    !x
+
+  let copy t = { arr = Array.copy t.arr }
+
+  let iter f t =
+    for i = 0 to size t do
+      if mem t i then f i
+    done;;
+end
+
+
 module Version = struct
   type t = int list
   let split v =
@@ -260,8 +351,12 @@ module Version = struct
   let v =
     if compare current [4;2] < 0 then
       `V3
-    else
+    else if compare current [4;3] < 0 then
       `V4_02
+    else if compare current [4;4] < 0 then
+      `V4_03
+    else
+      `V4_04
 
 end
 
@@ -312,19 +407,25 @@ module MagicNumber = struct
   let current_exe =
     let v = match Version.v with
       | `V3 -> 8
-      | `V4_02 -> 11 in
+      | `V4_02
+      | `V4_03 | `V4_04 -> 11
+    in
     ("Caml1999X",v)
 
   let current_cmo =
     let v = match Version.v with
       | `V3 -> 7
-      | `V4_02 -> 10 in
+      | `V4_02 -> 10
+      | `V4_03 | `V4_04 -> 11
+    in
     ("Caml1999O", v)
 
   let current_cma =
     let v = match Version.v with
       | `V3 -> 8
-      | `V4_02 -> 11 in
+      | `V4_02 -> 11
+      | `V4_03 | `V4_04 -> 12
+    in
     ("Caml1999A", v)
 
   let current = function
@@ -381,3 +482,38 @@ let rec obj_of_const =
       Obj.set_field b i (obj_of_const x)
     ) l;
     b
+
+
+#if OCAML_VERSION < (4,03,0)
+let uncapitalize_ascii = String.uncapitalize
+let capitalize_ascii = String.capitalize
+#else
+let uncapitalize_ascii = String.uncapitalize_ascii
+let capitalize_ascii = String.capitalize_ascii
+#endif
+
+
+let rec find_loc_in_summary name ident' = function
+  | Env.Env_empty -> None
+  | Env.Env_value (_summary, ident, description)
+    when ident = ident' ->
+    Some description.Types.val_loc
+  | Env.Env_value (summary,_,_)
+  | Env.Env_type (summary, _, _)
+#if OCAML_VERSION < (4,2,0)
+  | Env.Env_exception (summary, _,_)
+#else
+  | Env.Env_extension (summary, _, _)
+#endif
+  | Env.Env_module (summary, _, _)
+  | Env.Env_modtype (summary, _, _)
+  | Env.Env_class (summary, _, _)
+  | Env.Env_cltype (summary, _, _)
+  | Env.Env_open (summary, _)
+#if OCAML_VERSION >= (4,2,0)
+  | Env.Env_functor_arg (summary, _)
+#endif
+#if OCAML_VERSION >= (4,4,0)
+  | Env.Env_constraints (summary, _)
+#endif
+   -> find_loc_in_summary name ident' summary

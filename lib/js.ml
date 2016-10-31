@@ -226,18 +226,21 @@ class type ['a] js_array = object
   method unshift_3 : 'a -> 'a -> 'a -> int meth
   method unshift_4 : 'a -> 'a -> 'a -> 'a -> int meth
 
-  method some : ('a -> int -> 'a js_array t -> bool t ) -> bool t meth
-  method every : ('a -> int -> 'a js_array t -> bool t ) -> bool t meth
-  method forEach : ('a -> int -> 'a js_array t -> unit ) -> unit meth
-  method map : ('a -> int -> 'a js_array t -> 'b) -> 'b js_array t meth
-  method filter : ('a -> int -> 'a js_array t -> bool t) -> 'a js_array t meth
-  method reduce_init : ('b -> 'a -> int -> 'a js_array t -> 'b) -> 'b -> 'b meth
-  method reduce : ('a -> 'a -> int -> 'a js_array t -> 'a) -> 'a meth
-  method reduceRight_init : ('b -> 'a -> int -> 'a js_array t -> 'b) -> 'b -> 'b meth
-  method reduceRight : ('a -> 'a -> int -> 'a js_array t -> 'a) -> 'a meth
+  method some : ('a -> int -> 'a js_array t -> bool t ) callback -> bool t meth
+  method every : ('a -> int -> 'a js_array t -> bool t ) callback -> bool t meth
+  method forEach : ('a -> int -> 'a js_array t -> unit ) callback -> unit meth
+  method map : ('a -> int -> 'a js_array t -> 'b) callback -> 'b js_array t meth
+  method filter : ('a -> int -> 'a js_array t -> bool t) callback -> 'a js_array t meth
+  method reduce_init : ('b -> 'a -> int -> 'a js_array t -> 'b) callback -> 'b -> 'b meth
+  method reduce : ('a -> 'a -> int -> 'a js_array t -> 'a) callback -> 'a meth
+  method reduceRight_init : ('b -> 'a -> int -> 'a js_array t -> 'b) callback -> 'b -> 'b meth
+  method reduceRight : ('a -> 'a -> int -> 'a js_array t -> 'a) callback -> 'a meth
 
   method length : int prop
 end
+
+let object_constructor = Unsafe.global##_Object
+let object_keys o : js_string t js_array t = object_constructor##keys(o)
 
 let array_constructor = Unsafe.global##_Array
 let array_empty = array_constructor
@@ -245,6 +248,14 @@ let array_length = array_constructor
 
 let array_get : 'a #js_array t -> int -> 'a optdef = Unsafe.get
 let array_set : 'a #js_array t -> int -> 'a -> unit = Unsafe.set
+
+let array_map_poly :
+  'a #js_array t  ->
+  ('a -> int -> 'a #js_array t -> 'b) callback ->
+  'b #js_array t = fun a cb -> (Unsafe.coerce a)##map(cb)
+
+let array_map  f a = array_map_poly a (wrap_callback (fun x _idx _ -> f x))
+let array_mapi f a = array_map_poly a (wrap_callback (fun x idx _  -> f idx x))
 
 class type match_result = object
   inherit [js_string t] js_array
@@ -263,7 +274,7 @@ class type number = object
   method toFixed : int -> js_string t meth
   method toExponential : js_string t meth
   method toExponential_digits : int -> js_string t meth
-  method toPrecision : int -> js_string meth t
+  method toPrecision : int -> js_string t meth
 end
 
 external number_of_float : float -> number t = "caml_js_from_float"
@@ -392,6 +403,8 @@ exception Error of error t
 let error_constr = Unsafe.global##_Error
 let _ = Callback.register_exception "jsError" (Error (Unsafe.obj [||]))
 
+let raise_js_error = ((Unsafe.js_expr "(function (exn) { throw exn })") : error t -> 'a)
+
 class type json = object
   method parse : js_string t -> 'a meth
   method stringify: 'a -> js_string t meth
@@ -422,8 +435,8 @@ external to_array : 'a js_array t -> 'a array = "caml_js_to_array"
 external bytestring : string -> js_string t = "caml_bytes_of_string"
 external to_bytestring : js_string t -> string = "caml_js_to_byte_string"
 
-external typeof : < .. > t -> js_string t = "caml_js_typeof"
-external instanceof : 'a -> 'b -> bool = "caml_js_instanceof"
+external typeof : _ t -> js_string t = "caml_js_typeof"
+external instanceof : _ t -> _ constr -> bool = "caml_js_instanceof"
 
 let isNaN (i : 'a) : bool =
   to_bool (Unsafe.fun_call (Unsafe.global##isNaN) [|Unsafe.inject i|])
@@ -446,10 +459,23 @@ let _ =
 let _ =
   Printexc.register_printer
     (fun e ->
+       let e : < .. > t = Obj.magic e in
        if instanceof e array_constructor then None
-       else Some (to_string ((Obj.magic e)##toString())))
+       else Some (to_string (e##toString())))
 
 let string_of_error e = to_string (e##toString())
+
+external get_export_var : unit -> < .. > t = "caml_js_export_var"
+
+let export_js (field : js_string t) x =
+  Unsafe.set (get_export_var ()) field x
+
+let export field x = export_js (string field) x
+let export_all obj =
+  let keys = object_keys obj in
+  keys##forEach (wrap_callback (fun (key : js_string t) _ _ ->
+    export_js key (Unsafe.get obj key)
+  ))
 
 (****)
 

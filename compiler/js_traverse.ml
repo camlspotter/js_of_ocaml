@@ -246,8 +246,7 @@ class share_constant = object(m)
           | _ -> None in
         match shareit with
         | Some name ->
-          let v = Code.Var.fresh () in
-          Code.Var.name v name;
+          let v = Code.Var.fresh_n name in
           Hashtbl.add all x (V v)
         | _ -> ()
       ) count ;
@@ -449,13 +448,13 @@ class rename_variable keeps = object
   val mutable sub_ = new subst (fun x -> x)
 
   method merge_info from =
+    super#merge_info from;
     let h = Hashtbl.create 17 in
     let _ = StringSet.iter (fun name ->
         if StringSet.mem name keeps
         then ()
         else
-          let v = Code.Var.fresh () in
-          Code.Var.name v name;
+          let v = Code.Var.fresh_n name in
           Hashtbl.add h name v) from#state.def_name in
     let f = function
       | (S {name}) when Hashtbl.mem h name -> V (Hashtbl.find h name)
@@ -476,8 +475,7 @@ class rename_variable keeps = object
       | Try_statement (b,w,f) ->
         let w = match w with
           | Some(S {name},block) ->
-            let v = Code.Var.fresh () in
-            Code.Var.name v name;
+            let v = Code.Var.fresh_n name in
             let sub = function
               | S {name=name'} when name' = name -> V v
               | x -> x in
@@ -634,18 +632,22 @@ class clean = object(m)
       | (Block b, _) -> List.rev_append b l
       | x -> x::l in
     let l = super#statements l in
-    let vars_rev,instr_rev =
-      List.fold_left (fun (vars_rev,instr_rev) (x, loc) ->
+    let vars_rev,vars_loc,instr_rev =
+      List.fold_left (fun (vars_rev,vars_loc,instr_rev) (x, loc) ->
         match x with
-          | Variable_statement l -> (List.rev_append l vars_rev,instr_rev)
+          | Variable_statement l when Option.Optim.compact () ->
+            let vars_loc = match vars_loc with
+              | Pi _ as x -> x
+              | _           -> loc in
+            (List.rev_append l vars_rev,vars_loc,instr_rev)
           | Empty_statement
-          | Expression_statement (EVar _) -> vars_rev,instr_rev
-          | _ when vars_rev = [] -> ([],rev_append_st (x, loc) instr_rev)
-          | _ -> ([],rev_append_st (x, loc) ((Variable_statement (List.rev vars_rev), N)::instr_rev))
-      ) ([],[]) l in
+          | Expression_statement (EVar _) -> vars_rev,vars_loc,instr_rev
+          | _ when vars_rev = [] -> ([],vars_loc,rev_append_st (x, loc) instr_rev)
+          | _ -> ([],vars_loc,rev_append_st (x, loc) ((Variable_statement (List.rev vars_rev), vars_loc)::instr_rev))
+      ) ([],N,[]) l in
     let instr_rev = match vars_rev with
       | [] -> instr_rev
-      | vars_rev -> (Variable_statement (List.rev vars_rev), N) :: instr_rev
+      | vars_rev -> (Variable_statement (List.rev vars_rev), vars_loc) :: instr_rev
     in List.rev instr_rev
 
    method statement s =
@@ -781,11 +783,11 @@ class simpl = object(m)
 
         | Variable_statement l1 ->
           let x = List.map (function
-              | (ident,None) -> (Variable_statement [(ident,None)], N)
+              | (ident,None) -> (Variable_statement [(ident,None)], loc)
               | (ident,Some (exp,pc)) ->
               match assign_op (EVar ident,exp) with
-              | Some e -> (Expression_statement e, N)
-              | None -> (Variable_statement [(ident,Some (exp,pc))],N)) l1 in
+              | Some e -> (Expression_statement e, loc)
+              | None -> (Variable_statement [(ident,Some (exp,pc))],loc)) l1 in
           x@rem
         | _ -> (st, loc)::rem
       ) s []

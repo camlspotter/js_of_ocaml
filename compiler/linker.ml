@@ -44,6 +44,13 @@ let parse_annot loc s =
 
 let error s = Format.ksprintf (fun s -> failwith s) s
 
+let is_file_directive cmt =
+  let lexbuf = Lexing.from_string cmt in
+  try
+    let _file,_line = Js_lexer.pos lexbuf in
+    true
+  with _ -> false
+
 let parse_file f =
   let file =
     try
@@ -65,6 +72,11 @@ let parse_file f =
   let lex = Parse_js.lexer_from_file ~rm_comment:false file in
   let status,lexs = Parse_js.lexer_fold (fun (status,lexs) t ->
       match t with
+      | Js_token.TComment (_info,str) when is_file_directive str -> begin
+          match status with
+          | `Annot _ -> `Annot [],lexs
+          | `Code (an,co) -> `Annot [], ((List.rev an,List.rev co)::lexs)
+        end
       | Js_token.TComment (info,str) -> begin
           match parse_annot info str with
           | None -> (status,lexs)
@@ -224,15 +236,16 @@ let find_named_value code =
 let add_file f =
   List.iter
     (fun (provide,req,versions,(code:Javascript.program)) ->
-       incr last_code_id;
-       let id = !last_code_id in
        let vmatch = match versions with
          | [] -> true
          | l -> List.exists version_match l in
        if vmatch
        then begin
+         incr last_code_id;
+         let id = !last_code_id in
          (match provide with
-          | None -> always_included := id :: !always_included
+          | None ->
+            always_included := id :: !always_included
           | Some (pi,name,kind,ka) ->
             let module J = Javascript in
             let rec find = function
@@ -329,6 +342,7 @@ let resolve_deps ?(linkall = false) visited_rev used =
     then
       begin
         (* link all primitives *)
+
         let prog,set =
           Hashtbl.fold (fun nm (_id,_) (visited,set) ->
               resolve_dep_name_rev visited [] nm,
@@ -350,3 +364,12 @@ let resolve_deps ?(linkall = false) visited_rev used =
   visited_rev, missing
 
 let link program state = List.flatten (List.rev (program::state.codes))
+
+let all state =
+  IntSet.fold (fun id acc ->
+    try
+      let name,_ = Hashtbl.find provided_rev id in
+      name :: acc
+    with Not_found ->
+      acc
+  ) state.ids []

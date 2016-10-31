@@ -17,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 *)
 
+val stop_profiling : unit -> unit
+val start_profiling : string -> unit
 module Debug : sig
   val available : unit -> string list
   val find : string -> unit -> bool
@@ -42,9 +44,12 @@ module Optim : sig
   val debuginfo : unit -> bool
   val excwrap : unit -> bool
   val include_cmis: unit -> bool
+  val improved_stacktrace : unit -> bool
 
   val warn_unused : unit -> bool
   val inline_callgen : unit -> bool
+
+  val check_magic : unit -> bool
 
   val enable : string -> unit
   val disable : string -> unit
@@ -60,7 +65,7 @@ module Param : sig
   type tc =
      | TcNone
      | TcTrampoline
-     | TcWhile
+     (* | TcWhile *)
   val tailcall_optim : unit -> tc
 end
 

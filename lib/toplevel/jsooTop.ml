@@ -63,7 +63,10 @@ let setup = lazy (
     Js.Unsafe.global##toplevelEval(res)
   in
   Js.Unsafe.global##toplevelCompile <- compile (*XXX HACK!*);
-  Js.Unsafe.global##toplevelEval <- (fun x -> Js.Unsafe.eval_string x);
+  Js.Unsafe.global##toplevelEval <- (fun x ->
+    let f : < .. > Js.t -> unit = Js.Unsafe.eval_string x in
+    (fun () -> f Js.Unsafe.global)
+  );
   ())
 
 let refill_lexbuf s p ppf buffer len =
@@ -96,24 +99,25 @@ let execute printval ?pp_code ?highlight_location  pp_answer s =
     while true do
       try
         let phr = !Toploop.parse_toplevel_phrase lb in
+        let phr = JsooTopPpx.preprocess_phrase phr in
         ignore(Toploop.execute_phrase printval pp_answer phr)
       with
       | End_of_file ->
         raise End_of_file
-      | JsooTopError.Camlp4 (loc,_exn) -> 
-	 begin match highlight_location with
-	       | None -> () 
-	       | Some f -> f loc
-	 end;
+      | JsooTopError.Camlp4 (loc,_exn) ->
+	begin match highlight_location with
+	| None -> ()
+	| Some f -> f loc
+	end;
       | x ->
-	 begin match highlight_location with
-	       | None -> () 
-	       | Some f ->   
-		  match JsooTopError.loc x with
-		  | None -> ()
-		  | Some loc -> f loc
-	 end;
-         Errors.report_error Format.err_formatter x;
+	begin match highlight_location with
+	| None -> ()
+	| Some f ->
+	  match JsooTopError.loc x with
+	  | None -> ()
+	  | Some loc -> f loc
+	end;
+        Errors.report_error Format.err_formatter x;
     done
   with End_of_file ->
     flush_all ()
@@ -129,6 +133,6 @@ let syntaxes = ref []
 let register_camlp4_syntax name f =
   syntaxes := name :: !syntaxes;
   f (fun (_name,cb) ->
-      (* Format.eprintf "execute callback for %s@." name; *)
-      cb ())
+    (* Format.eprintf "execute callback for %s@." name; *)
+    cb ())
 let get_camlp4_syntaxes () = List.rev !syntaxes

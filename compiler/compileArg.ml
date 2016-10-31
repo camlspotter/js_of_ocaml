@@ -25,10 +25,14 @@ type t = {
   profile : Driver.profile option;
   source_map : (string option * Source_map.t) option;
   runtime_files : string list;
+  runtime_only : bool;
   output_file : string option;
   input_file : string option;
   params : (string * string) list;
-  (* toplevel *)
+  static_env : (string * string) list;
+  wrap_with_fun : bool;
+ (* toplevel *)
+  dynlink : bool;
   linkall : bool;
   toplevel : bool;
   nocmis : bool;
@@ -70,6 +74,10 @@ let options =
     let doc = "Do not include the standard runtime." in
     Arg.(value & flag & info ["noruntime";"no-runtime"] ~doc)
   in
+  let runtime_only  =
+    let doc = "Generate a JavaScript file containing/exporting the runtime only." in
+    Arg.(value & flag & info ["runtime-only"] ~doc)
+  in
   let sourcemap =
     let doc = "Generate source map." in
     Arg.(value & flag & info ["sourcemap";"source-map"] ~doc)
@@ -86,11 +94,19 @@ let options =
     let doc = "root dir for source map." in
     Arg.(value & opt (some string) None & info ["source-map-root"] ~doc)
   in
+  let wrap_with_function =
+    let doc = "Wrap the generated JavaScript code inside a function that needs to be applied with the global object." in
+    Arg.(value & flag & info ["wrap-with-fun"] ~doc)
+  in
   let set_param =
     let doc = "Set compiler options." in
     let all = List.map (fun (x,_) ->
       x, x) (Option.Param.all ()) in
     Arg.(value & opt_all (list (pair ~sep:'=' (enum all) string)) [] & info ["set"] ~docv:"PARAM=VALUE"~doc)
+  in
+  let set_env =
+    let doc = "Set environment variable statically." in
+    Arg.(value & opt_all (list (pair ~sep:'=' string string)) [] & info ["setenv"] ~docv:"PARAM=VALUE"~doc)
   in
   let toplevel =
     let doc = "Compile a toplevel." in
@@ -98,7 +114,11 @@ let options =
   in
   let linkall =
     let doc = "Link all primitives." in
-    Arg.(value & flag & info ["linkall"] ~docs:toplevel_section ~doc)
+    Arg.(value & flag & info ["linkall"] ~doc)
+  in
+  let dynlink =
+    let doc = "Enable dynlink." in
+    Arg.(value & flag & info ["dynlink"] ~doc)
   in
   let nocmis =
     let doc = "Do not include cmis when compiling toplevel." in
@@ -123,8 +143,11 @@ let options =
   let build_t
       common
       set_param
+      set_env
+      dynlink
       linkall
       toplevel
+      wrap_with_fun
       include_dir
       fs_files
       fs_output
@@ -132,6 +155,7 @@ let options =
       nocmis
       profile
       noruntime
+      runtime_only
       sourcemap
       sourcemap_inline_in_js
       sourcemap_don't_inline_content
@@ -149,8 +173,13 @@ let options =
         if noruntime
         then runtime_files
         else "+runtime.js"::runtime_files in
-      let linkall = linkall || toplevel in
-      let fs_external = fs_external || (toplevel && nocmis) in
+      let runtime_files =
+        if not noruntime && runtime_only
+        then "+predefined_exceptions.js" :: runtime_files
+        else runtime_files
+      in
+      let linkall = linkall || toplevel || runtime_only in
+      let fs_external = fs_external || (toplevel && nocmis) || runtime_only in
       let input_file = match input_file with
         | "-" -> None
         | x -> Some x in
@@ -180,16 +209,22 @@ let options =
             })
         else None in
       let params : (string * string) list = List.flatten set_param in
+      let static_env : (string * string) list = List.flatten set_env in
       `Ok {
         common;
         params;
         profile;
+        static_env;
 
+        wrap_with_fun;
+
+        dynlink;
         linkall;
         toplevel;
 
         include_dir;
         runtime_files;
+        runtime_only;
 
         fs_files;
         fs_output;
@@ -206,8 +241,11 @@ let options =
     Term.(pure build_t
           $ CommonArg.t
           $ set_param
+          $ set_env
+          $ dynlink
           $ linkall
           $ toplevel
+          $ wrap_with_function
 
           $ include_dir
           $ fs_files
@@ -218,6 +256,7 @@ let options =
           $ profile
 
           $ noruntime
+          $ runtime_only
           $ sourcemap
           $ sourcemap_inline_in_js
           $ sourcemap_don't_inline_content
@@ -237,7 +276,8 @@ let info =
   let man = [
     `S "DESCRIPTION";
     `P "Js_of_ocaml is a compiler from OCaml bytecode to Javascript. \
-        It makes OCaml programs run on Web browsers.";
+        It makes it possible to run pure OCaml programs in \
+        JavaScript environments like web browsers and Node.js.";
     `S "BUGS";
     `P "Bugs are tracked on github at \
         $(i,https://github.com/ocsigen/js_of_ocaml/issues).";

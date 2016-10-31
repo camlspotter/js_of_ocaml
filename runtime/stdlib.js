@@ -166,6 +166,19 @@ function caml_wrap_exception(e) {
   return [0,caml_global_data.Failure,caml_js_to_string (String(e))];
 }
 
+// Experimental
+//Provides: caml_exn_with_js_backtrace
+//Requires: caml_global_data
+function caml_exn_with_js_backtrace(exn, force) {
+  if(!exn.js_error || force) exn.js_error = new joo_global_object.Error("Js exception containing backtrace");
+  return exn;
+}
+//Provides: caml_js_error_of_exception
+function caml_js_error_of_exception(exn) {
+  if(exn.js_error) { return exn.js_error; }
+  return null;
+}
+
 //Provides: caml_invalid_argument (const)
 //Requires: caml_raise_with_string, caml_global_data
 function caml_invalid_argument (msg) {
@@ -367,6 +380,8 @@ function caml_compare_val (a, b, total) {
         return -1;
       } else if (typeof a != "number" && a && a.compare) {
         return a.compare(b,total);
+      } else if (typeof a == "function") {
+        caml_invalid_argument("equal: functional value");
       } else {
         if (a < b) return -1;
         if (a > b) return 1;
@@ -475,12 +490,14 @@ function caml_float_of_string(s) {
   s = s.replace(/_/g,"");
   res = +s;
   if (((s.length > 0) && (res === res)) || /^[+-]?nan$/i.test(s)) return res;
-  if(/^ *0x[0-9a-f_]+p[+-]?[0-9_]+/i.test(s)){
-    var pidx = s.indexOf('p');
-    pidx = (pidx==-1)?s.indexOf('P'):pidx;
-    var exp = +s.substring(pidx + 1);
-    res = +s.substring(0,pidx);
-    return res * Math.pow(2,exp);
+  var m = /^ *([+-]?)0x([0-9a-f]+)\.?([0-9a-f]*)p([+-]?[0-9]+)/i.exec(s);
+//            1        2             3           4
+  if(m){
+    var m3 = m[3].replace(/0+$/,'');
+    var mantissa = parseInt(m[1] + m[2] + m3, 16);
+    var exponent = (m[4]|0) - 4*m3.length;
+    res = mantissa * Math.pow(2, exponent);
+    return res;
   }
   if(/^\+?inf(inity)?$/i.test(s)) return Infinity;
   if(/^-inf(inity)?$/i.test(s)) return -Infinity;
@@ -597,7 +614,7 @@ function caml_format_int(fmt, i) {
 function caml_format_float (fmt, x) {
   var s, f = caml_parse_format(fmt);
   var prec = (f.prec < 0)?6:f.prec;
-  if (x < 0) { f.sign = -1; x = -x; }
+  if (x < 0 || (x == 0 && 1/x == -Infinity)) { f.sign = -1; x = -x; }
   if (isNaN(x)) { s = "nan"; f.filler = ' '; }
   else if (!isFinite(x)) { s = "inf"; f.filler = ' '; }
   else
@@ -698,83 +715,118 @@ function caml_hash_univ_param (count, limit, obj) {
   return hash_accu & 0x3FFFFFFF;
 }
 
+//function ROTL32(x,n) { return ((x << n) | (x >>> (32-n))); }
+//Provides: caml_hash_mix_int
+//Requires: caml_mul
+function caml_hash_mix_int(h,d) {
+  d = caml_mul(d, 0xcc9e2d51|0);
+  d = ((d << 15) | (d >>> (32-15))); // ROTL32(d, 15);
+  d = caml_mul(d, 0x1b873593);
+  h ^= d;
+  h = ((h << 13) | (h >>> (32-13)));   //ROTL32(h, 13);
+  return (((h + (h << 2))|0) + (0xe6546b64|0))|0;
+}
+
+//Provides: caml_hash_mix_final
+//Requires: caml_mul
+function caml_hash_mix_final(h) {
+  h ^= h >>> 16;
+  h = caml_mul (h, 0x85ebca6b|0);
+  h ^= h >>> 13;
+  h = caml_mul (h, 0xc2b2ae35|0);
+  h ^= h >>> 16;
+  return h;
+}
+
+//Provides: caml_hash_mix_float
+//Requires: caml_hash_mix_int, caml_int64_bits_of_float
+function caml_hash_mix_float (h, v0) {
+  var v = caml_int64_bits_of_float (v0);
+  var lo = v[1] | (v[2] << 24);
+  var hi = (v[2] >>> 8) | (v[3] << 16);
+  h = caml_hash_mix_int(h, lo);
+  h = caml_hash_mix_int(h, hi);
+  return h;
+}
+//Provides: caml_hash_mix_int64
+//Requires: caml_hash_mix_int
+function caml_hash_mix_int64 (h, v) {
+  var lo = v[1] | (v[2] << 24);
+  var hi = (v[2] >>> 8) | (v[3] << 16);
+  h = caml_hash_mix_int(h, hi ^ lo);
+  return h;
+}
+
+//Provides: caml_hash_mix_string_str
+//Requires: caml_hash_mix_int
+function caml_hash_mix_string_str(h, s) {
+  var len = s.length, i, w;
+  for (i = 0; i + 4 <= len; i += 4) {
+    w = s.charCodeAt(i)
+        | (s.charCodeAt(i+1) << 8)
+        | (s.charCodeAt(i+2) << 16)
+        | (s.charCodeAt(i+3) << 24);
+    h = caml_hash_mix_int(h, w);
+  }
+  w = 0;
+  switch (len & 3) {
+  case 3: w  = s.charCodeAt(i+2) << 16;
+  case 2: w |= s.charCodeAt(i+1) << 8;
+  case 1: w |= s.charCodeAt(i);
+          h = caml_hash_mix_int(h, w);
+  default:
+  }
+  h ^= len;
+  return h;
+}
+
+//Provides: caml_hash_mix_string_arr
+//Requires: caml_hash_mix_int
+function caml_hash_mix_string_arr(h, s) {
+  var len = s.length, i, w;
+  for (i = 0; i + 4 <= len; i += 4) {
+    w = s[i]
+      | (s[i+1] << 8)
+      | (s[i+2] << 16)
+      | (s[i+3] << 24);
+    h = caml_hash_mix_int(h, w);
+  }
+  w = 0;
+  switch (len & 3) {
+  case 3: w  = s[i+2] << 16;
+  case 2: w |= s[i+1] << 8;
+  case 1: w |= s[i];
+    h = caml_hash_mix_int(h, w);
+  default:
+  }
+  h ^= len;
+  return h;
+}
+
+//Provides: caml_hash_mix_string
+//Requires: caml_convert_string_to_bytes
+//Requires: caml_hash_mix_string_str
+//Requires: caml_hash_mix_string_arr
+function caml_hash_mix_string(h, v) {
+    switch (v.t & 6) {
+    default:
+        caml_convert_string_to_bytes (v);
+    case 0: /* BYTES */
+        h = caml_hash_mix_string_str(h, v.c);
+        break;
+    case 2: /* ARRAY */
+        h = caml_hash_mix_string_arr(h, v.c);
+    }
+    return h
+}
+
+
 //Provides: caml_hash mutable
-//Requires: MlString, caml_convert_string_to_bytes
-//Requires: caml_int64_bits_of_float, caml_mul
-var caml_hash =
-function () {
-  var HASH_QUEUE_SIZE = 256;
-  function ROTL32(x,n) { return ((x << n) | (x >>> (32-n))); }
-  function MIX(h,d) {
-    d = caml_mul(d, 0xcc9e2d51|0);
-    d = ROTL32(d, 15);
-    d = caml_mul(d, 0x1b873593);
-    h ^= d;
-    h = ROTL32(h, 13);
-    return (((h + (h << 2))|0) + (0xe6546b64|0))|0;
-  }
-  function FINAL_MIX(h) {
-    h ^= h >>> 16;
-    h = caml_mul (h, 0x85ebca6b|0);
-    h ^= h >>> 13;
-    h = caml_mul (h, 0xc2b2ae35|0);
-    h ^= h >>> 16;
-    return h;
-  }
-  function caml_hash_mix_int64 (h, v) {
-    var lo = v[1] | (v[2] << 24);
-    var hi = (v[2] >>> 8) | (v[3] << 16);
-    h = MIX(h, lo);
-    h = MIX(h, hi);
-    return h;
-  }
-  function caml_hash_mix_int64_2 (h, v) {
-    var lo = v[1] | (v[2] << 24);
-    var hi = (v[2] >>> 8) | (v[3] << 16);
-    h = MIX(h, hi ^ lo);
-    return h;
-  }
-  function caml_hash_mix_string_str(h, s) {
-    var len = s.length, i, w;
-    for (i = 0; i + 4 <= len; i += 4) {
-      w = s.charCodeAt(i)
-          | (s.charCodeAt(i+1) << 8)
-          | (s.charCodeAt(i+2) << 16)
-          | (s.charCodeAt(i+3) << 24);
-      h = MIX(h, w);
-    }
-    w = 0;
-    switch (len & 3) {
-    case 3: w  = s.charCodeAt(i+2) << 16;
-    case 2: w |= s.charCodeAt(i+1) << 8;
-    case 1: w |= s.charCodeAt(i);
-            h = MIX(h, w);
-    default:
-    }
-    h ^= len;
-    return h;
-  }
-  function caml_hash_mix_string_arr(h, s) {
-    var len = s.length, i, w;
-    for (i = 0; i + 4 <= len; i += 4) {
-      w = s[i]
-          | (s[i+1] << 8)
-          | (s[i+2] << 16)
-          | (s[i+3] << 24);
-      h = MIX(h, w);
-    }
-    w = 0;
-    switch (len & 3) {
-    case 3: w  = s[i+2] << 16;
-    case 2: w |= s[i+1] << 8;
-    case 1: w |= s[i];
-            h = MIX(h, w);
-    default:
-    }
-    h ^= len;
-    return h;
-  }
-  return function (count, limit, seed, obj) {
+//Requires: MlString
+//Requires: caml_int64_bits_of_float, caml_hash_mix_int, caml_hash_mix_final
+//Requires: caml_hash_mix_int64, caml_hash_mix_float, caml_hash_mix_string
+var HASH_QUEUE_SIZE = 256;
+function caml_hash (count, limit, seed, obj) {
     var queue, rd, wr, sz, num, h, v, i, len;
     sz = limit;
     if (sz < 0 || sz > HASH_QUEUE_SIZE) sz = HASH_QUEUE_SIZE;
@@ -782,57 +834,48 @@ function () {
     h = seed;
     queue = [obj]; rd = 0; wr = 1;
     while (rd < wr && num > 0) {
-      v = queue[rd++];
-      if (v instanceof Array && v[0] === (v[0]|0)) {
-        switch (v[0]) {
-        case 248:
-          // Object
-          h = MIX(h, v[2]);
-          num--;
-          break;
-        case 250:
-          // Forward
-          queue[--rd] = v[1];
-          break;
-        case 255:
-          // Int64
-          h = caml_hash_mix_int64_2 (h, v);
-          num --;
-          break;
-        default:
-          var tag = ((v.length - 1) << 10) | v[0];
-          h = MIX(h, tag);
-          for (i = 1, len = v.length; i < len; i++) {
-            if (wr >= sz) break;
-            queue[wr++] = v[i];
-          }
-          break;
+        v = queue[rd++];
+        if (v instanceof Array && v[0] === (v[0]|0)) {
+            switch (v[0]) {
+            case 248:
+                // Object
+                h = caml_hash_mix_int(h, v[2]);
+                num--;
+                break;
+            case 250:
+                // Forward
+                queue[--rd] = v[1];
+                break;
+            case 255:
+                // Int64
+                h = caml_hash_mix_int64 (h, v);
+                num --;
+                break;
+            default:
+                var tag = ((v.length - 1) << 10) | v[0];
+                h = caml_hash_mix_int(h, tag);
+                for (i = 1, len = v.length; i < len; i++) {
+                    if (wr >= sz) break;
+                    queue[wr++] = v[i];
+                }
+                break;
+            }
+        } else if (v instanceof MlString) {
+            h = caml_hash_mix_string(h,v)
+            num--;
+        } else if (v === (v|0)) {
+            // Integer
+            h = caml_hash_mix_int(h, v+v+1);
+            num--;
+        } else if (v === +v) {
+            // Float
+            h = caml_hash_mix_float(h,v);
+            num--;
         }
-      } else if (v instanceof MlString) {
-        switch (v.t & 6) {
-        default:
-          caml_convert_string_to_bytes (v);
-        case 0: /* BYTES */
-          h = caml_hash_mix_string_str(h, v.c);
-          break;
-        case 2: /* ARRAY */
-          h = caml_hash_mix_string_arr(h, v.c);
-        }
-        num--;
-      } else if (v === (v|0)) {
-        // Integer
-        h = MIX(h, v+v+1);
-        num--;
-      } else if (v === +v) {
-        // Float
-        h = caml_hash_mix_int64(h, caml_int64_bits_of_float (v));
-        num--;
-      }
     }
-    h = FINAL_MIX(h);
+    h = caml_hash_mix_final(h);
     return h & 0x3FFFFFFF;
-  }
-} ();
+}
 
 ///////////// Sys
 //Provides: caml_sys_time mutable
@@ -843,6 +886,14 @@ function caml_sys_time () { return new Date() * 0.001 - caml_initial_time; }
 function caml_sys_get_config () {
   return [0, caml_new_string("Unix"), 32, 0];
 }
+
+//Provides: caml_sys_const_backend_type const
+//Requires: caml_new_string
+function caml_sys_const_backend_type () {
+  return [0, caml_new_string("js_of_ocaml")];
+}
+
+
 //Provides: caml_sys_random_seed mutable
 //Version: < 4.00
 //The function needs to return an array since OCaml 4.0...
@@ -964,14 +1015,14 @@ function caml_backtrace_status () { return 0; }
 //Provides: caml_get_exception_backtrace const
 function caml_get_exception_backtrace () { return 0; }
 //Provides: caml_get_exception_raw_backtrace const
-function caml_get_exception_raw_backtrace () { return 0; }
+function caml_get_exception_raw_backtrace () { return [0]; }
 //Provides: caml_record_backtrace
 function caml_record_backtrace () { return 0; }
 //Provides: caml_convert_raw_backtrace const
 function caml_convert_raw_backtrace () { return 0; }
 //Provides: caml_get_current_callstack const
-function caml_get_current_callstack () { return 0; }
-//Provides: caml_sys_getenv
+function caml_get_current_callstack () { return [0]; }
+//Provides: caml_sys_getenv (const)
 //Requires: caml_raise_not_found
 //Requires: caml_js_to_string
 function caml_sys_getenv (name) {
@@ -1004,7 +1055,7 @@ function caml_sys_get_argv () {
 
   if(g.process
      && g.process.argv
-     && g.process.argv.length > 0) {
+     && g.process.argv.length > 1) {
     var argv = g.process.argv
     //nodejs
     main = argv[1];
@@ -1021,12 +1072,20 @@ function caml_sys_get_argv () {
 //Provides: unix_inet_addr_of_string
 function unix_inet_addr_of_string () {return 0;}
 
+//Provides: caml_oo_last_id
+var caml_oo_last_id = 0;
 
 //Provides: caml_set_oo_id
-var caml_oo_last_id = 0;
+//Requires: caml_oo_last_id
 function caml_set_oo_id (b) {
   b[2]=caml_oo_last_id++;
   return b;
+}
+
+//Provides: caml_fresh_oo_id
+//Requires: caml_oo_last_id
+function caml_fresh_oo_id() {
+  return caml_oo_last_id++;
 }
 
 //Provides: caml_install_signal_handler const
@@ -1073,4 +1132,26 @@ function caml_list_of_js_array(a){
     l = [0,e,l];
   }
   return l
+}
+
+//Provides: caml_runtime_warnings
+var caml_runtime_warnings = 0;
+
+//Provides: caml_ml_enable_runtime_warnings
+//Requires: caml_runtime_warnings
+function caml_ml_enable_runtime_warnings (bool) {
+  caml_runtime_warnings = bool;
+  return 0;
+}
+
+//Provides: caml_ml_runtime_warnings_enabled
+//Requires: caml_runtime_warnings
+function caml_ml_runtime_warnings_enabled (_unit) {
+  return caml_runtime_warnings;
+}
+
+
+//Provides: caml_sys_isatty
+function caml_sys_isatty(_chan) {
+  return 0;
 }

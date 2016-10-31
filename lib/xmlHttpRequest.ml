@@ -43,7 +43,7 @@ class type xmlHttpRequest = object ('self)
   method overrideMimeType : js_string t -> unit meth
   method send : js_string t opt -> unit meth
   method send_blob : #File.blob t -> unit meth
-  method send_document : Dom.element Dom.document -> unit meth
+  method send_document : Dom.element Dom.document t -> unit meth
   method send_formData : Form.formData t -> unit meth
   method abort : unit meth
   method status : int readonly_prop
@@ -54,6 +54,7 @@ class type xmlHttpRequest = object ('self)
   method responseText : js_string t readonly_prop
   method responseXML : Dom.element Dom.document t opt readonly_prop
   method responseType : js_string t prop
+  method withCredentials : bool t writeonly_prop
 
   inherit File.progressEventTarget
   method ontimeout : ('self t, 'self File.progressEvent t) Dom.event_listener writeonly_prop
@@ -77,10 +78,12 @@ module Event = struct
 end
 
 let create () : xmlHttpRequest Js.t =
-  try jsnew (Js.Unsafe.global##_XMLHttpRequest)() with _ ->
-  try jsnew (Js.Unsafe.global##activeXObject)(Js.string "Msxml2.XMLHTTP") with _ ->
-  try jsnew (Js.Unsafe.global##activeXObject)(Js.string "Msxml3.XMLHTTP") with _ ->
-  try jsnew (Js.Unsafe.global##activeXObject)(Js.string "Microsoft.XMLHTTP") with _ ->
+  let xmlHttpRequest = Js.Unsafe.global##_XMLHttpRequest in
+  let activeXObject = Js.Unsafe.global##activeXObject in
+  try jsnew xmlHttpRequest() with _ ->
+  try jsnew activeXObject(Js.string "Msxml2.XMLHTTP") with _ ->
+  try jsnew activeXObject(Js.string "Msxml3.XMLHTTP") with _ ->
+  try jsnew activeXObject(Js.string "Microsoft.XMLHTTP") with _ ->
   assert false
 
 let encode_url l =
@@ -176,6 +179,7 @@ let perform_raw
     ?upload_progress
     ?override_mime_type
     ?override_method
+    ?with_credentials
     (type resptype) ~(response_type:resptype response)
     url =
 
@@ -258,6 +262,11 @@ let perform_raw
   | JSON        -> req ## responseType <- (Js.string "json")
   | Text        -> req ## responseType <- (Js.string "text")
   | Default     -> req ## responseType <- (Js.string "")
+  end;
+
+  begin match with_credentials with
+    Some c -> req ## withCredentials <- Js.bool c
+  | None   -> ()
   end;
 
   (match content_type with
@@ -356,10 +365,11 @@ let perform_raw_url
     ?upload_progress
     ?override_mime_type
     ?override_method
+    ?with_credentials
     url =
   perform_raw ~headers ?content_type ?post_args ~get_args ?form_arg
     ?check_headers ?progress ?upload_progress ?override_mime_type
-    ?override_method ~response_type:Default url
+    ?override_method ?with_credentials ~response_type:Default url
 
 let perform
     ?(headers = [])
@@ -372,9 +382,11 @@ let perform
     ?upload_progress
     ?override_mime_type
     ?override_method
+    ?with_credentials
     url =
   perform_raw ~headers ?content_type ?post_args ~get_args ?form_arg
     ?check_headers ?progress ?upload_progress ?override_mime_type
-    ?override_method ~response_type:Default (Url.string_of_url url)
+    ?override_method ?with_credentials
+    ~response_type:Default (Url.string_of_url url)
 
 let get s = perform_raw_url s

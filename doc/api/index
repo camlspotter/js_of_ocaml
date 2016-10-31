@@ -22,6 +22,10 @@ Sys_js
 Typed_array
 WebGL
 WebSockets
+Geolocation
+Jstable
+MutationObserver
+Worker
 }
 
 {1 Ppx - API Reference}

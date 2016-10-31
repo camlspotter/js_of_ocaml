@@ -30,6 +30,13 @@ function int_math_int64_pow_stub(base, exponent){
   return res;
 }
 
+//Provides: int_math_int_popcount
+function int_math_int_popcount(v) {
+  v = v - ((v >>> 1) & 0x55555555);
+  v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
+  return ((v + (v >>> 4) & 0xF0F0F0F) * 0x1010101) >>> 24;
+}
+
 //Provides: caml_hash_string
 //Requires: caml_hash
 function caml_hash_string(s) {
@@ -90,17 +97,27 @@ function core_kernel_gc_minor_words () { return 0 }
 function core_kernel_gc_promoted_words () { return 0 }
 //Provides: core_kernel_gc_top_heap_words
 function core_kernel_gc_top_heap_words () { return 0 }
-//Provides: caml_gc_counters
-function caml_gc_counters() { return [254,0,0,0] }
-//Provides: caml_gc_quick_stat
-function caml_gc_quick_stat(){
-  return [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-}
-//Provides: caml_gc_stat
-function caml_gc_stat() {
-  return [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-}
-
 //Provides: clear_caml_backtrace_pos
 function clear_caml_backtrace_pos () { return 0 }
 
+//Provides: internalhash_fold_int64
+//Requires: caml_hash_mix_int64
+var internalhash_fold_int64 = caml_hash_mix_int64
+//Provides: internalhash_fold_int
+//Requires: caml_hash_mix_int
+var internalhash_fold_int = caml_hash_mix_int
+//Provides: internalhash_fold_float
+//Requires: caml_hash_mix_float
+var internalhash_fold_float = caml_hash_mix_float
+//Provides: internalhash_fold_string
+//Requires: caml_hash_mix_string
+var internalhash_fold_string = caml_hash_mix_string
+//Provides: internalhash_fold_bigstring
+//Requires: caml_hash_mix_bigstring
+var internalhash_fold_bigstring = caml_hash_mix_bigstring
+//Provides: internalhash_get_hash_value
+//Requires: caml_hash_mix_final
+function internalhash_get_hash_value (seed) {
+  var h = caml_hash_mix_final(seed);
+  return h & 0x3FFFFFFF;
+}

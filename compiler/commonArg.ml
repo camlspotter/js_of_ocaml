@@ -27,6 +27,7 @@ type t = {
   debug : string list on_off;
   optim : string list on_off;
   quiet : bool;
+  custom_header : string option;
 }
 
 
@@ -63,13 +64,26 @@ let noinline =
 let quiet =
   let doc = "suppress non-error messages." in
   Arg.(value & flag & info ["quiet";"q"] ~doc)
-  
+
+let custom_header =
+  let doc = "Provide a custom header for the generated JavaScript file, \
+             useful for making the script an \
+             executable file with #!/usr/bin/env node"
+  in
+  Arg.(value & opt (some string) None & info ["custom-header"] ~doc)
 
 let t = Term.(
-    pure (fun debug enable disable pretty debuginfo noinline quiet ->
+    pure (fun debug enable disable pretty debuginfo noinline quiet c_header ->
         let enable = if pretty then "pretty"::enable else enable in
         let enable = if debuginfo then "debuginfo"::enable else enable in
         let disable = if noinline then "inline"::disable else disable in
+        let disable_if_pretty name disable =
+          if pretty && not (List.mem name enable)
+          then name :: disable
+          else disable
+        in
+        let disable = disable_if_pretty "shortvar" disable in
+        let disable = disable_if_pretty "share" disable in
         {
           debug = {
             enable = debug;
@@ -79,7 +93,8 @@ let t = Term.(
             enable;
             disable
           };
-	  quiet
+	  quiet;
+          custom_header = c_header;
         }
       )
     $ debug
@@ -88,7 +103,8 @@ let t = Term.(
     $ pretty
     $ debuginfo
     $ noinline
-    $ quiet 
+    $ quiet
+    $ custom_header
   )
 
 

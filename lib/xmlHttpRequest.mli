@@ -44,7 +44,7 @@ class type xmlHttpRequest = object ('self)
   method overrideMimeType : js_string t -> unit meth
   method send : js_string t opt -> unit meth
   method send_blob : #File.blob t -> unit meth
-  method send_document : Dom.element Dom.document -> unit meth
+  method send_document : Dom.element Dom.document t -> unit meth
   method send_formData : Form.formData t -> unit meth
   method abort : unit meth
   method status : int readonly_prop
@@ -55,6 +55,7 @@ class type xmlHttpRequest = object ('self)
   method responseText : js_string t readonly_prop
   method responseXML : Dom.element Dom.document t opt readonly_prop
   method responseType : js_string t prop
+  method withCredentials : bool t writeonly_prop
 
   inherit File.progressEventTarget
   method ontimeout : ('self t, 'self File.progressEvent t) Dom.event_listener writeonly_prop
@@ -112,6 +113,7 @@ val perform_raw :
   -> ?upload_progress:(int -> int -> unit)
   -> ?override_mime_type:string
   -> ?override_method:[< `GET | `POST | `HEAD | `PUT | `DELETE | `OPTIONS | `PATCH ]
+  -> ?with_credentials:bool
   -> response_type:('a response)
   -> string
   -> 'a generic_http_frame Lwt.t
@@ -131,13 +133,14 @@ val perform_raw_url :
   -> ?upload_progress:(int -> int -> unit)
   -> ?override_mime_type:string
   -> ?override_method:[< `GET | `POST | `HEAD | `PUT | `DELETE | `OPTIONS | `PATCH ]
+  -> ?with_credentials:bool
   -> string
   -> http_frame Lwt.t
   (** [perform_raw_url] makes an asynchronous request to the specified [url] with
       specified options. The result is a cancelable thread returning
-      an HTTP frame. By default, if [post_args] and [form_arg] are [None], a GET 
+      an HTTP frame. By default, if [post_args] and [form_arg] are [None], a GET
       request is used. If [post_args] or [form_arg] is [Some _] (even [Some []]) then a POST
-      request is made. But if [override_method] is set, the request method is forced, 
+      request is made. But if [override_method] is set, the request method is forced,
       no matter the [post_args] or [form_arg] value. For example, with [override_method]
       set to [`PUT] and [form_arg] set to [Some _] a PUT request including the form data
       will be made. The [check_headers] argument is run as soon as the answer
@@ -155,6 +158,7 @@ val perform :
   -> ?upload_progress:(int -> int -> unit)
   -> ?override_mime_type:string
   -> ?override_method:[< `GET | `POST | `HEAD | `PUT | `DELETE | `OPTIONS | `PATCH ]
+  -> ?with_credentials:bool
   -> Url.url
   -> http_frame Lwt.t
   (** [perform] is the same as {!perform_raw_url} except that the Url argument has type

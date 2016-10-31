@@ -31,24 +31,29 @@ let by_id_coerce s f  = Js.Opt.get (f (Dom_html.getElementById s)) (fun () -> ra
 let do_by_id s f = try f (Dom_html.getElementById s) with Not_found -> ()
 
 (* load file using a synchronous XMLHttpRequest *)
-let load_resource_aux url =
-  try
-    let xml = XmlHttpRequest.create () in
-    xml##_open(Js.string "GET", url, Js._false);
-    xml##send(Js.null);
-    if xml##status = 200 then Some (xml##responseText) else None
-  with _ -> None
+let load_resource_aux filename url =
+  XmlHttpRequest.perform_raw ~response_type:XmlHttpRequest.ArrayBuffer url
+  >|= fun frame ->
+  if frame.XmlHttpRequest.code = 200
+  then
+    Js.Opt.case frame.XmlHttpRequest.content
+      (fun () -> Printf.eprintf "Could not load %s\n" filename)
+      (fun b  ->
+         Sys_js.update_file ~name:filename ~content:(Typed_array.String.of_arrayBuffer b))
+  else ()
 
-let load_resource scheme (_,suffix) =
-  let url = (Js.string scheme)##concat(suffix) in
-  load_resource_aux url
+let load_resource scheme (prefix,suffix) =
+  let url = scheme ^ suffix in
+  let filename = Filename.concat prefix suffix in
+  Lwt.async (fun () -> load_resource_aux filename url);
+  Some ""
 
 let setup_pseudo_fs () =
-  Sys_js.register_autoload' "/dev/" (fun s -> Some (Js.string ""));
-  Sys_js.register_autoload' "/http/"  (fun s -> load_resource "http://" s);
-  Sys_js.register_autoload' "/https/" (fun s -> load_resource "https://" s);
-  Sys_js.register_autoload' "/ftp/"   (fun s -> load_resource "ftp://" s);
-  Sys_js.register_autoload' "/" (fun (_,s) -> load_resource_aux ((Js.string "filesys/")##concat(s)))
+  Sys_js.register_autoload "/dev/"   (fun s -> None);
+  Sys_js.register_autoload "/http/"  (fun s -> load_resource "http://" s);
+  Sys_js.register_autoload "/https/" (fun s -> load_resource "https://" s);
+  Sys_js.register_autoload "/ftp/"   (fun s -> load_resource "ftp://" s);
+  Sys_js.register_autoload "/"       (fun s -> load_resource "filesys/" s)
 
 let exec' s =
   let res : bool = JsooTop.use Format.std_formatter s in
@@ -75,7 +80,12 @@ let setup_toplevel () =
         "     'JsooTop.get_camlp4_syntaxes ()' to get loaded syntax extensions" in
     exec' (Printf.sprintf "Format.printf \"%s@.@.\";;" header3));
   exec' ("#enable \"pretty\";;");
-  exec' ("#enable \"shortvar\";;");
+  exec' ("#disable \"shortvar\";;");
+#ifdef ppx
+  Ast_mapper.register "js_of_ocaml" Ppx_js.js_mapper;
+#endif
+  Hashtbl.add Toploop.directive_table "load_js" (Toploop.Directive_string (fun name ->
+    Js.Unsafe.global##load_script_(name)));
   Sys.interactive := true;
   ()
 
@@ -119,7 +129,7 @@ let setup_examples ~container ~textbox =
       match tok with
       | `Content line -> line ^ "\n" ^ acc
       | `Title   name ->
-      let a = Tyxml_js.Html5.(a ~a:[
+      let a = Tyxml_js.Html.(a ~a:[
         a_class ["list-group-item"];
         a_onclick (fun _ ->
           textbox##value <- (Js.string acc)##trim();
@@ -171,7 +181,7 @@ let setup_share_button ~output =
         Url.encode_arguments frags in
       let uri = Url.string_of_url url ^ "#" ^ frag in
       let append_url str =
-        let dom = Tyxml_js.Html5.(
+        let dom = Tyxml_js.Html.(
             p [ pcdata "Share this url : "; a ~a:[a_href str] [ pcdata str ]]) in
         Dom.appendChild output (Tyxml_js.To_dom.of_element dom)
       in
@@ -287,7 +297,7 @@ let run _ =
 
   let history_down e =
     let txt = Js.to_string textbox##value in
-    let pos = (Obj.magic textbox)##selectionStart in
+    let pos = textbox##selectionStart in
     try
       (if String.length txt = pos  then raise Not_found);
       let _ = String.index_from txt pos '\n' in
@@ -299,7 +309,7 @@ let run _ =
   in
   let history_up   e =
     let txt = Js.to_string textbox##value in
-    let pos = (Obj.magic textbox)##selectionStart - 1  in
+    let pos = textbox##selectionStart - 1  in
     try
       (if pos < 0  then raise Not_found);
       let _ = String.rindex_from txt pos '\n' in
@@ -349,6 +359,14 @@ let run _ =
   Sys_js.set_channel_flusher sharp_chan (append Colorize.ocaml output "sharp");
   Sys_js.set_channel_flusher stdout     (append Colorize.text  output "stdout");
   Sys_js.set_channel_flusher stderr     (append Colorize.text  output "stderr");
+
+  let readline () =
+    Js.Opt.case
+      (Dom_html.window##prompt
+         (Js.string "The toplevel expects inputs:", Js.string ""))
+      (fun () -> "")
+      (fun s -> Js.to_string s ^ "\n") in
+  Sys_js.set_channel_filler stdin readline;
 
   setup_share_button ~output;
   setup_examples ~container ~textbox;

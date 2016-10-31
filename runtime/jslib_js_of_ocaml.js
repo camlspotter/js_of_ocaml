@@ -55,7 +55,7 @@ function caml_js_call(f, o, args) { return f.apply(o, caml_js_from_array(args));
 //Provides: caml_js_fun_call (const, shallow)
 //Requires: caml_js_from_array
 function caml_js_fun_call(f, args) { return f.apply(null, caml_js_from_array(args)); }
-//Provides: caml_js_meth_call (mutable, mutable, shallow)
+//Provides: caml_js_meth_call (mutable, const, shallow)
 //Requires: MlString
 //Requires: caml_js_from_array
 function caml_js_meth_call(o, f, args) {
@@ -125,7 +125,7 @@ function caml_pure_js_expr (s){
   js_print_stderr("caml_pure_js_expr: fallback to runtime evaluation");
   return eval(s.toString());}
 
-//Provides: caml_js_object (shallow)
+//Provides: caml_js_object (object_literal)
 //Requires: MlString
 function caml_js_object (a) {
   var o = {};
@@ -134,4 +134,13 @@ function caml_js_object (a) {
     o[p[1].toString()] = p[2];
   }
   return o;
+}
+
+
+//Provides: caml_js_export_var
+function caml_js_export_var (){
+  if(typeof module !== 'undefined' && module && module.exports)
+    return module.exports
+  else
+    return joo_global_object;
 }
